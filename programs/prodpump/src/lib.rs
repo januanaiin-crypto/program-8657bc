@@ -46,7 +46,7 @@ pub mod prodpump {
     }
 
     pub fn register_product(ctx: Context<RegisterProduct>, product_hash: [u8; 32], launcher: Pubkey) -> Result<()> {
-        live(&ctx.accounts.config)?;
+        // Not stopped by the pause: a coin that already launched must still be recorded so the wind-down settles its vault.
         require!(!ctx.accounts.config.closing, ProdPumpError::WindingDown);
         require!(ctx.accounts.vault.lamports() >= Rent::get()?.minimum_balance(0), ProdPumpError::VaultBelowRent);
         read_coin(
