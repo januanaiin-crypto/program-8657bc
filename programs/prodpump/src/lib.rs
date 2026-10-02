@@ -20,6 +20,15 @@ const TOKEN: Address = Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf
 const TOKEN_2022: Address = Address::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const WSOL: Address = Address::from_str_const("So11111111111111111111111111111111111111112");
 const ZERO: Address = Address::new_from_array([0; 32]);
+const SYSVAR: Address = Address::from_str_const("Sysvar1111111111111111111111111111111111111");
+// runtime-reserved ids that are neither executable nor sysvars on mainnet, yet always demoted to read-only
+const RESERVED: [Address; 5] = [
+    Address::from_str_const("StakeConfig11111111111111111111111111111111"),
+    Address::from_str_const("LoaderV411111111111111111111111111111111111"),
+    Address::from_str_const("ZkTokenProof1111111111111111111111111111111"),
+    Address::from_str_const("NativeLoader1111111111111111111111111111111"),
+    SYSVAR,
+];
 const CONFIG_LEN: usize = 128;
 const PRODUCT_LEN: usize = 194;
 const CONFIG_DISC: [u8; 8] = [155, 12, 170, 224, 30, 250, 204, 130];
@@ -628,7 +637,7 @@ fn settle(a: &mut [AccountView], d: &[u8]) -> ProgramResult {
     let mut c = config(account(a, 1)?)?;
     auth(&c, c::ADMIN, account(a, 0)?)?;
     let p = product(account(a, 2)?, &hash)?;
-    for i in 0..5 {
+    for i in 0..4 {
         writable(account(a, i)?)?;
     }
     system(account(a, 5)?)?;
@@ -637,19 +646,28 @@ fn settle(a: &mut [AccountView], d: &[u8]) -> ProgramResult {
     money(account(a, 3)?, &[b"vault", &hash, &vb])?;
     let startup = key(&p, p::STARTUP)?;
     let tb = [byte(&c, c::TREASURY_BUMP)?];
-    let to = if startup == ZERO {
+    let dest = account(a, 4)?;
+    // A bound wallet the runtime never lets be writable (a program, a sysvar, a reserved id) must not block the
+    // wind-down: its vault goes to the treasury, passed after the system program. Any other startup is paid as bound.
+    let stuck = startup != ZERO
+        && dest.address() == &startup
+        && (dest.executable() || dest.owned_by(&SYSVAR) || RESERVED.contains(&startup));
+    let to_index = if stuck { 6 } else { 4 };
+    let to = if startup == ZERO || stuck {
         derived(&[b"treasury", &tb])?
     } else {
         startup
     };
-    need(account(a, 4)?.address() == &to, Error::Unauthorized)?;
-    if startup == ZERO {
-        money(account(a, 4)?, &[b"treasury", &tb])?;
+    if !stuck {
+        need(dest.address() == &to, Error::Unauthorized)?;
+    }
+    if to != startup {
+        money(account(a, to_index)?, &[b"treasury", &tb])?;
     }
     let amount = account(a, 3)?.lamports();
     transfer(
         account(a, 3)?,
-        account(a, 4)?,
+        account(a, to_index)?,
         amount,
         &[Seed::from(b"vault"), Seed::from(&hash), Seed::from(&vb)],
     )?;
