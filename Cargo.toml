@@ -11,6 +11,8 @@ overflow-checks = true
 opt-level = "z" # smallest program: network rent is paid per byte ("s" measured 14 KB larger, 2026-09-30)
 lto = "fat"
 codegen-units = 1
+panic = "abort"
+strip = true
 [profile.release.build-override]
 opt-level = 3
 incremental = false
